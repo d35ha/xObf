@@ -1,0 +1,6 @@
+[submodule "zydis"]
+	path = zydis
+	url = https://github.com/zyantific/zydis
+[submodule "xPE"]
+	path = xPE
+	url = https://github.com/d35ha/xPE
