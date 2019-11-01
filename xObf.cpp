@@ -48,8 +48,8 @@ std::vector<BYTE> xObfSectionData;
 //holds the whole data of the new section
 
 struct _LastReturn {
-	BOOL HasValue;				// if LastValue/LastValueOffset are valid
-	DWORD LastValue;			// the return address of the previous instruction
+	BOOL HasValue;			// if LastValue/LastValueOffset are valid
+	DWORD LastValue;		// the return address of the previous instruction
 	DWORD LastValueOffset;		// the offset where this address is stored
 };
 //the decoding key for each instruction is actually the return address
