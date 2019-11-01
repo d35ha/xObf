@@ -23,7 +23,7 @@ int main(int argc, char** argv){
 ```
 After compiling and using the obfuscator upon it, this is the difference between the main subroutine instructions before and after obfuscation
 
-![Impact](https://github.com/d35ha/xObf/tree/master/Images/Impact.png)
+![Impact](https://github.com/d35ha/xObf/raw/master/Images/Impact.png)
 
 This will mislead any disassembler/decompiler to preview wrong output
 
