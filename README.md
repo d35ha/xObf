@@ -39,7 +39,7 @@ This will mislead any disassembler/decompiler to preview wrong output
     * To have all of the branches obfuscated, make sure the binary is built with debug symbols not stripped
     * By default the tool will strip any of the debug symbols (COFF and debug table)
 * Out binary properties
-    * When fully obfuscated its size may reach 500% of the original size, the performance may reach 10% of the original performance and the obfuscated instruction will be 50-60% at x64 binaries and 20-30% at x86 binaries of the total number of the disassembled instructions
+    * When fully obfuscated its size may reach 500% of the original size, the performance may reach 10% of the original performance and the obfuscated instructions will be 50-60% at x64 binaries and 20-30% at x86 binaries of the total number of the disassembled instructions
     * Obfuscation is hugely increased if the original binary is statically linked
     * Because the obfuscated instructions are built on the fly, trying to use x-referencing (an import or a string) will be useless even at runtime because the instruction will be removed once executed
 * Multi Threading
