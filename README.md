@@ -37,7 +37,7 @@ This will mislead any disassembler/decompiler to preview wrong output
     * The engine uses recursive traversal disassembling starting from the entry point so a lot of branches won't be disassembled, like the branches accessed as statically undefined destination
     * To get over this problem, the tool will manipulate any of tls table, COFF symbol table, debug table (pdb file), exception table and export table if exists; to collect all of the possible subroutine entries
     * To have all of the branches obfuscated, make sure the binary is built with debug symbols not stripped
-    * By default the tool will strip any of the debug symbols (COFF and debug tables)
+    * By default the tool will strip any of the debug symbols (COFF and debug table)
 * Out binary properties
     * When fully obfuscated its size may reach 500% of the original size, the performance may reach 10% of the original performance and the obfuscated instruction will be 50-60% at x64 binaries and 20-30% at x86 binaries of the total number of the disassembled instructions
     * Obfuscation is hugely increased if the original binary is statically linked
