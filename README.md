@@ -47,6 +47,9 @@ This will mislead any disassembler/decompiler to preview wrong output
     * The tool can efficiently handle this by using `xchg` instruction that has `lock` prefix by default to make sure this won't happen
 * De-obfuscation
     * Of course the generated PE can be de-obfuscated, but it requires a lot of work regarding decoding the instructions because every instruction decoding depends on the executing of the previous block so it can be decoded at runtime only
+    * Dumping out the binary from memory will be useless because of the fact that there is no time at which the whole binary will be de-obfuscated at memory
+    * If the original binary is built with debug symbols not stripped, the tool will use it to obfuscate all of the unreachable subroutines and it will strip the symbols, so there is no way a de-obfuscator can reach those subroutines again.
+    * Long story short, if the binary has the debug symbols (COFF or debug table), it's almost impossible to de-obfuscate it !!
 * Development
     * The SBI engine uses the trampoline approach, so not all of the instructions are obfuscated (only the long instructions)
     * To obfuscate 100% of the instructions, it should use int3 approach, so I'm going to work on this implementation
