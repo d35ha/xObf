@@ -2,7 +2,7 @@
 Simple x86/x86_64 instruction level obfuscator based on a basic SBI engine
 
 # How it works 
-This is straight forward:
+This is straightforward:
 * Create new section to hold the de-obfuscation blocks
 * Recursively disassemble all of the possible branches
 * Replace long instruction with a `call` to the appropriate block
@@ -48,7 +48,7 @@ This will mislead any disassembler/decompiler to preview wrong output
 * De-obfuscation
     * Of course the generated PE can be de-obfuscated, but it requires a lot of work regarding decoding the instructions because every instruction decoding depends on the executing of the previous block so it can be decoded at runtime only
 * Development
-    * The SBI engine uses the trampoline approach, so not all of the instructions are disassembled (only the long instructions)
+    * The SBI engine uses the trampoline approach, so not all of the instructions are obfuscated (only the long instructions)
     * To obfuscate 100% of the instructions, it should use int3 approach, so I'm going to work on this implementation
 * Other binaries types
     * For now it handles only PEs, but the same core and techniques can be applied for any other type
