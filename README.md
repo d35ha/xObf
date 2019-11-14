@@ -5,7 +5,7 @@ Simple x86/x86_64 instruction level obfuscator based on a basic SBI engine
 This is straightforward:
 * Create new section to hold the de-obfuscation blocks
 * Recursively disassemble all of the possible branches
-* Replace long instruction with a `call` to the appropriate block
+* Replace long instructions with a `call` to the appropriate block
 * Each block will decode/write/execute/clear the instruction at runtime
 
 # Impact
