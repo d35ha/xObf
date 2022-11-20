@@ -1,7 +1,8 @@
 #include <set>
 #include <vector>
 #include <algorithm>  
-#include <unordered_map>
+#include <map>
+#include <random>
 
 #include <time.h>
 #include <Zydis/Zydis.h>
@@ -34,8 +35,8 @@ struct _NB10I {
 // pdb function symbols array
 std::vector<ZyanU64> PdbFunVAs;
 
-std::unordered_map<ZyanU64, std::pair<BOOL,
-	std::unordered_map<ZyanU64, DWORD>>> Branches;
+std::vector<std::pair<ZyanU64, std::pair<BOOL,
+	std::vector<std::pair<ZyanU64, DWORD>>>>> Branches;
 //map_of:
 //	- branch_base_address
 //	- pair_of:
@@ -60,11 +61,15 @@ struct _LastReturn {
 //in its chain
 
 struct _HookState {
-	BOOL bContinueChain;			// to continue or stop the hook chain
 	_LastReturn DecodeKey;			// the key that will be used globally
-	// for all of the instruction in case
-	// bContinueChain equals FALSE
-} HookState;
+									// for all of the instruction in case
+	_HookState()
+	{
+		DecodeKey.HasValue = FALSE;
+		DecodeKey.LastValue = 0;
+		DecodeKey.LastValueOffset = 0;
+	};
+};
 //the concept of the hook chain is not applicable for all of the instructions
 //because in so many cases (like branching) one instruction can be accessed
 //from within two paths (like a node), so in this case the chain is broken
@@ -100,7 +105,9 @@ INT main(INT argc, PCHAR* argv)
 	LPCSTR InPE = NULL, OutPE = NULL;
 	BOOL IsVerbous = FALSE;
 	// seeding
-	srand((UINT32)time(0));
+	std::random_device dev;
+	std::mt19937 rng(dev());
+	std::uniform_int_distribution<std::mt19937::result_type> dist(0, 0xffffffff);
 
 	// parsing the arguments
 	for (DWORD dwParamIndex = 1; dwParamIndex < (DWORD)argc; dwParamIndex++)
@@ -322,14 +329,6 @@ INT main(INT argc, PCHAR* argv)
 	};
 #endif
 
-	auto ResetHookChain = [&]() -> VOID {
-		// resetting the hook chain
-		HookState.bContinueChain = TRUE;
-		HookState.DecodeKey.HasValue = FALSE;
-		HookState.DecodeKey.LastValue = 0;
-		HookState.DecodeKey.LastValueOffset = 0;
-	};
-
 	// the tool is basically a recursive disassembler
 	auto DisassembleBranch = [&](
 		ZyanUSize Rva, // branch base address rva
@@ -341,10 +340,9 @@ INT main(INT argc, PCHAR* argv)
 		ZyanU64 InstrAddress = (ZyanU64)lpNtHeader->OptionalHeader.ImageBase + Rva;
 		if (IsVerbous) Utils::Printf::Info("Disassembling branch at 0x%llx",
 			InstrAddress);
-		// inserting the branch to the Branches array and getting the iterator
-		std::unordered_map<ZyanU64, std::pair<BOOL,
-			std::unordered_map<ZyanU64, DWORD>>>::iterator Branch =
-			Branches.insert({ InstrAddress, {FALSE, {}} }).first;
+		// inserting the branch to the Branches array and getting the index
+		auto BranchIndex = Branches.size();
+		Branches.push_back({ InstrAddress, {FALSE, {}} });
 		// the remaining length of the whole buffer
 		ZyanUSize Length;
 		// to determine if the branch is reached and end or not
@@ -355,7 +353,7 @@ INT main(INT argc, PCHAR* argv)
 		// the destination address for a branch
 		ZyanU64 DestAddr;
 		PIMAGE_SECTION_HEADER lpHeaderSection;
-		srand(rand()); // used to generate the random bytes
+		_HookState HookState;
 
 		// getting the raw offset of the branch
 		DWORD Offset;
@@ -367,7 +365,6 @@ INT main(INT argc, PCHAR* argv)
 		{
 			Utils::Printf::Fail("Cannot get offset for the branch at 0x%llx",
 				InstrAddress);
-			HookState.bContinueChain = FALSE;
 			return;
 		};
 
@@ -455,7 +452,6 @@ INT main(INT argc, PCHAR* argv)
 
 			// the absolute address of branch
 			InstrAddress = (ZyanU64)lpNtHeader->OptionalHeader.ImageBase + Rva;
-
 			Length = (ZyanUSize)RawPE.dwSize - Offset;
 			if (!Length)
 			{
@@ -469,15 +465,18 @@ INT main(INT argc, PCHAR* argv)
 			// if the current instruction is already disassembled
 			BOOL IsDisassembled = FALSE;
 			// iterator to a branch to be used while looping
-			std::unordered_map<ZyanU64, std::pair<BOOL,
-				std::unordered_map<ZyanU64, DWORD>>>::iterator DisBranch;
+			std::vector<std::pair<ZyanU64, std::pair<BOOL,
+				std::vector<std::pair<ZyanU64, DWORD>>>>>::iterator DisBranch;
 			// checking if the current is already disassembled
 			for (DisBranch = Branches.begin();
 				DisBranch != Branches.end();
 				DisBranch++)
 			{
-				std::unordered_map<ZyanU64, DWORD>::iterator DisInstruction =
-					DisBranch->second.second.find(InstrAddress);
+				std::vector<std::pair<ZyanU64, DWORD>>::iterator DisInstruction =
+				std::find_if(DisBranch->second.second.begin(), DisBranch->second.second.end(), [InstrAddress](auto& iter)
+					{
+						return iter.first == InstrAddress;
+					});
 				if (DisInstruction == DisBranch->second.second.end())
 					continue;
 
@@ -495,10 +494,14 @@ INT main(INT argc, PCHAR* argv)
 				// unhooking the first hooked instruction from DisBranch
 				for (; DisInstruction != DisBranch->second.second.end();
 					DisInstruction++) {
+
 					// check if the instruction is hooked
-					if (!DisInstruction->second ||
-						DisInstruction->second == -1)
+					if (!DisInstruction->second)
 						continue;
+					// check if the instruction is unhooked
+					else if (DisInstruction->second == -1)
+						break;
+
 					// getting the raw offset of the instruction
 					if (!Utils::RvaToOffset(
 						lpNtHeader,
@@ -553,12 +556,10 @@ INT main(INT argc, PCHAR* argv)
 			};
 
 			// insert the current instruction at the branch vector and
-			// get an iterator to it, setting the key to be 0
-			std::unordered_map<ZyanU64, DWORD>::iterator BranchInstruction =
-				Branch->second.second.insert(Branch->second.second.end(),
-					{ InstrAddress, 0 });
+			// get the index of it, setting the key to be 0
+			auto BranchInstructionIndex = Branches[BranchIndex].second.second.size();
+			Branches[BranchIndex].second.second.push_back({ InstrAddress, 0 });
 			IsLongEnough = (ZyInstruction.length >= 5);
-
 
 			// determining whether to get the key as the return address
 			// of the previous instruction or mov it directly to the eax
@@ -582,7 +583,7 @@ INT main(INT argc, PCHAR* argv)
 				for (DWORD dwIndex = 0;
 					dwIndex < sizeof(PVOID);
 					dwIndex++) ObfuscatedBlockVec.at(RANDOM_BYTES_OFFSET +
-					(SIZE_T)dwIndex) = (BYTE)rand();
+					(SIZE_T)dwIndex) = (BYTE)dist(rng);
 
 #if defined(_M_X64) || defined(__amd64__)
 				// make sure all of the relative memory operands are relocated
@@ -621,7 +622,7 @@ INT main(INT argc, PCHAR* argv)
 					HookState.DecodeKey.LastValueOffset : 0),
 					// the key is the last return value or it will be some random value
 					Key = (HookState.DecodeKey.HasValue ? HookState.DecodeKey.LastValue :
-					(DWORD)((rand() << 16) + rand()));
+					(DWORD)((dist(rng) << 16) + dist(rng)));
 				ObfValue = *(PDWORD)((DWORD_PTR)RawPE.lpDataBuffer + Offset) - Key;
 
 #if defined(_M_X64) || defined(__amd64__)
@@ -650,8 +651,8 @@ INT main(INT argc, PCHAR* argv)
 					0x87, 0x05, 0x03, 0x00, 0x00, 0x00, // xchg dword [instr_ptr], eax
 					0x58, // pop eax
 					0xF3, 0x90, // pause
-					(BYTE)rand(), (BYTE)rand(),	// first 4 bytes of the instruction
-					(BYTE)rand(), (BYTE)rand()  // now it will be random bytes
+					(BYTE)dist(rng), (BYTE)dist(rng),	// first 4 bytes of the instruction
+					(BYTE)dist(rng), (BYTE)dist(rng)  // now it will be random bytes
 					// at runtime it will be overwritten
 					// with the original bytes
 					// after executing it will be overwritten
@@ -675,8 +676,8 @@ INT main(INT argc, PCHAR* argv)
 					0x00, 0x00, 0x00, 0x00,
 					0x58,
 					0xF3, 0x90,
-					(BYTE)rand(), (BYTE)rand(),
-					(BYTE)rand(), (BYTE)rand()
+					(BYTE)dist(rng), (BYTE)dist(rng),
+					(BYTE)dist(rng), (BYTE)dist(rng)
 				};
 				// again "pop [RANDOM_BYTES_OFFSET]" is accessed by absolute RANDOM_BYTES_OFFSET
 				*(PDWORD)& (ObfuscatedBlockVec.at(RET_ADDRESS_OFFSET)) =
@@ -723,7 +724,7 @@ INT main(INT argc, PCHAR* argv)
 						bKey + sizeof(bKey));
 					// in this case the instruction is a part of a hook chain
 					// so it has to be flagged as so
-					BranchInstruction->second = Key;
+					Branches[BranchIndex].second.second[BranchInstructionIndex].second = Key;
 					bKeySize = sizeof(bKey);
 				};
 
@@ -787,7 +788,7 @@ INT main(INT argc, PCHAR* argv)
 				// padding it with random bytes
 				for (ZyanI8 zyIndex = 0;
 					zyIndex < ZyInstruction.length - 5;
-					zyIndex++)* (CallInst + 5 + zyIndex) = rand() & 0xff;
+					zyIndex++)* (CallInst + 5 + zyIndex) = dist(rng) & 0xff;
 
 				// inserting the call instruction instead of the original one
 				memmove(
@@ -796,14 +797,12 @@ INT main(INT argc, PCHAR* argv)
 					ZyInstruction.length
 				);
 
-				if (HookState.bContinueChain) {
-					// update the current Key with the return address of the current instruction
-					// every instruction will depend on the key that is the return of the previous one
-					HookState.DecodeKey.HasValue = TRUE;
-					HookState.DecodeKey.LastValue = (DWORD)(InstrAddress + 5);
-					HookState.DecodeKey.LastValueOffset = (DWORD)xObfSectionData.size() + RANDOM_BYTES_OFFSET
-						+ (DWORD)InterpretedInst.size();
-				};
+				// update the current Key with the return address of the current instruction
+				// every instruction will depend on the key that is the return of the previous one
+				HookState.DecodeKey.HasValue = TRUE;
+				HookState.DecodeKey.LastValue = (DWORD)(InstrAddress + 5);
+				HookState.DecodeKey.LastValueOffset = (DWORD)xObfSectionData.size() + RANDOM_BYTES_OFFSET
+					+ (DWORD)InterpretedInst.size();
 
 				// appending the whole block to the new section data
 				xObfSectionData.insert(xObfSectionData.end(),
@@ -873,8 +872,6 @@ INT main(INT argc, PCHAR* argv)
 				if (!DestAddr) {
 					if (IsVerbous) Utils::Printf::Info("Cannot get the call address at 0x%llx",
 						InstrAddress);
-					// this means the call is made like "call rax" which is undefined
-					HookState.bContinueChain = FALSE;
 				}
 				else if (ValidAddr)
 				{
@@ -891,8 +888,6 @@ INT main(INT argc, PCHAR* argv)
 					InstrAddress);
 				if (!DestAddr)
 				{
-					// undefined jump like "jmp rax"
-					HookState.bContinueChain = FALSE;
 					// at this point the branch itself is broken
 					bContinueInBranch = FALSE;
 					if (IsVerbous) Utils::Printf::Info("Cannot get the jmp address at 0x%llx",
@@ -911,7 +906,6 @@ INT main(INT argc, PCHAR* argv)
 						&Offset
 					))
 					{
-						HookState.bContinueChain = FALSE;
 						bContinueInBranch = FALSE;
 						Utils::Printf::Fail("Cannot get offset for the branch at 0x%llx",
 							DestAddr);
@@ -945,7 +939,6 @@ INT main(INT argc, PCHAR* argv)
 				// because there is two possible paths can be
 				// taken from this point, and it's impossible
 				// to determine which one will be taken
-				HookState.bContinueChain = FALSE;
 				if (IsVerbous) Utils::Printf::Info("Found conditional jmp instruction at 0x%llx",
 					InstrAddress);
 				if (!DestAddr) {
@@ -961,8 +954,7 @@ INT main(INT argc, PCHAR* argv)
 				};
 				break;
 			default:
-				// unknown branch type, break the hookchain and the branch
-				HookState.bContinueChain = FALSE;
+				// unknown branch type, break the branch
 				bContinueInBranch = FALSE;
 				Utils::Printf::Fail("Undefined branch instruction at 0x%llx",
 					InstrAddress);
@@ -974,11 +966,7 @@ INT main(INT argc, PCHAR* argv)
 			Rva += ZyInstruction.length;
 		};
 
-		Branch->second.first = TRUE;
-		// some cases when the whole branch is already disassembled
-		// it will create an empty vector so we remove it
-		if (!Branch->second.second.size())
-			Branches.erase(Branch);
+		Branches[BranchIndex].second.first = TRUE;
 		if (IsVerbous) Utils::Printf::Info("Reached the end of a branch at 0x%llx",
 			InstrAddress);
 		return;
@@ -1032,7 +1020,7 @@ INT main(INT argc, PCHAR* argv)
 			// looping on all of the callbacks
 			// and for each one reset the hook chain
 			// that's because each one must be executed separately
-			ResetHookChain();
+			_HookState HookState;
 			DisassembleBranch(
 				(ZyanUSize)((uintptr_t)* lpCallBack -
 					lpNtHeader->OptionalHeader.ImageBase),
@@ -1043,7 +1031,6 @@ INT main(INT argc, PCHAR* argv)
 
 	if (IsVerbous) Utils::Printf::Info("Obfuscating the entry subroutine");
 	// passing the entry point
-	ResetHookChain();
 	ZyanUSize EntryOffset = lpNtHeader->OptionalHeader.AddressOfEntryPoint;
 	DisassembleBranch(
 		EntryOffset,
